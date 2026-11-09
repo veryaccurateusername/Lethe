@@ -20,12 +20,16 @@ h1{margin:.2em 0 .1em;font-size:clamp(1.8rem,6vw,2.8rem)}
 h1,.sub{text-align:center}
 h1{background:linear-gradient(90deg,var(--h1a),var(--h1b),var(--h1c));-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent;text-shadow:none;filter:drop-shadow(0 2px 14px rgba(168,85,247,.45))}
 .sub{color:var(--muted);margin:0 0 1.5rem}
-.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.grid{position:relative;display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
 .cell{position:relative;background:linear-gradient(145deg,rgba(255,255,255,.22),rgba(255,255,255,.06));-webkit-backdrop-filter:blur(24px) saturate(180%);backdrop-filter:blur(24px) saturate(180%);border:1px solid rgba(255,255,255,.28);border-radius:22px;padding:20px 8px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.45),inset 0 -1px 0 rgba(255,255,255,.08)}
 .num,.lbl{position:relative;z-index:2}
 .cell.broken{background:none;-webkit-backdrop-filter:none;backdrop-filter:none;border-color:transparent;box-shadow:none}
-.shards{position:absolute;inset:0;z-index:1;pointer-events:none}
-.shard{position:absolute;inset:0;border-radius:22px;will-change:transform,opacity}
+.cell.broken .num,.cell.broken .lbl{visibility:hidden}
+.shards{position:absolute;inset:-1px;z-index:3;pointer-events:none}
+.shard{position:absolute;inset:0;border-radius:22px;border:1px solid rgba(255,255,255,.32);padding:20px 8px;text-align:center;will-change:transform,opacity}
+.shard .num,.shard .lbl{position:relative}
+.crack{position:absolute;inset:0;width:100%;height:100%;z-index:5;pointer-events:none;overflow:visible}
+body.breaking{overflow:hidden}
 .num{font-size:clamp(2rem,10vw,3.6rem);font-weight:700;font-variant-numeric:tabular-nums;color:var(--gold)}
 .lbl{color:var(--muted);font-size:.75rem;text-transform:uppercase;letter-spacing:.1em}
 </style>
@@ -51,16 +55,49 @@ const TARGET = TEST ? Date.now() + 8000 : Date.parse("2026-11-11T13:00:00-08:00"
 const $ = id => document.getElementById(id);
 const pad = n => String(n).padStart(2, "0");
 const reduce = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+const NS = "http://www.w3.org/2000/svg";
 let started = false, ended = false;
 
-function shatter(cell){
+// One crack from the bottom-left of the first box to the top-right of the last box.
+function crack(grid){
+  const W = grid.offsetWidth, H = grid.offsetHeight, L = Math.hypot(W, H);
+  const nx = H/L, ny = W/L;
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("class", "crack");
+  svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+  svg.style.filter = "drop-shadow(0 0 5px #e9d5ff) drop-shadow(0 0 16px #a855f7)";
+  const N = 16, pts = [];
+  for (let i = 0; i <= N; i++){
+    const t = i/N, j = (i === 0 || i === N) ? 0 : (Math.random()-.5)*28;
+    pts.push([t*W + j*nx, H - t*H + j*ny]);
+  }
+  const mk = (d, w, o) => { const p = document.createElementNS(NS, "path");
+    p.setAttribute("d", d); p.setAttribute("fill", "none"); p.setAttribute("stroke", "#fff");
+    p.setAttribute("stroke-width", w); p.setAttribute("stroke-linecap", "round");
+    p.setAttribute("stroke-linejoin", "round"); p.setAttribute("opacity", o); svg.appendChild(p); return p; };
+  const main = mk("M" + pts.map(p => p[0].toFixed(1)+","+p[1].toFixed(1)).join(" L"), 3, 1);
+  for (let k = 0; k < 6; k++){
+    const i = 2 + Math.floor(Math.random()*(N-3)), a = pts[i], dir = Math.random() < .5 ? 1 : -1;
+    const len = 25 + Math.random()*55, bx = a[0] + dir*nx*len + (Math.random()-.5)*20, by = a[1] + dir*ny*len + (Math.random()-.5)*20;
+    mk("M" + a[0].toFixed(1)+","+a[1].toFixed(1) + " L" + ((a[0]+bx)/2+(Math.random()-.5)*10).toFixed(1)+","+((a[1]+by)/2+(Math.random()-.5)*10).toFixed(1) + " L" + bx.toFixed(1)+","+by.toFixed(1), 1.6, .8);
+  }
+  grid.appendChild(svg);
+  const len = main.getTotalLength();
+  main.style.strokeDasharray = len;
+  main.animate([{strokeDashoffset: len}, {strokeDashoffset: 0}], {duration: 220, easing: "ease-in", fill: "forwards"});
+  return svg;
+}
+
+function shatter(cell, W, H){
+  const L = Math.hypot(W, H), nx = H/L, ny = W/L;
+  const ox = cell.offsetLeft, oy = cell.offsetTop, cw = cell.offsetWidth, ch = cell.offsetHeight;
   const box = document.createElement("div");
   box.className = "shards";
-  const C = 4, R = 3, pts = [];
+  const C = 5, R = 4, pts = [];
   for (let r = 0; r <= R; r++){ pts.push([]);
     for (let c = 0; c <= C; c++){
-      const edgeX = c === 0 || c === C, edgeY = r === 0 || r === R;
-      pts[r].push([c/C*100 + (edgeX ? 0 : (Math.random()-.5)*16), r/R*100 + (edgeY ? 0 : (Math.random()-.5)*26)]);
+      const eX = c === 0 || c === C, eY = r === 0 || r === R;
+      pts[r].push([c/C*100 + (eX ? 0 : (Math.random()-.5)*13), r/R*100 + (eY ? 0 : (Math.random()-.5)*22)]);
     }
   }
   const tris = [];
@@ -69,39 +106,63 @@ function shatter(cell){
     if (Math.random() < .5){ tris.push([a,b,e]); tris.push([a,e,d]); }
     else { tris.push([a,b,d]); tris.push([b,e,d]); }
   }
+  const content = Array.from(cell.children).map(n => { const c = n.cloneNode(true); c.removeAttribute("id"); return c; });
   const anims = [];
   tris.forEach(t => {
     const el = document.createElement("div");
     el.className = "shard";
+    content.forEach(c => el.appendChild(c.cloneNode(true)));
     const cx = (t[0][0]+t[1][0]+t[2][0])/3, cy = (t[0][1]+t[1][1]+t[2][1])/3;
     el.style.clipPath = "polygon(" + t.map(p => p[0].toFixed(1)+"% "+p[1].toFixed(1)+"%").join(",") + ")";
     el.style.transformOrigin = cx.toFixed(1)+"% "+cy.toFixed(1)+"%";
-    el.style.background = "linear-gradient(" + Math.floor(Math.random()*360) + "deg,rgba(255,255,255,.5),rgba(255,255,255,.12) 60%,rgba(190,150,255,.3))";
+    el.style.background = "linear-gradient(" + Math.floor(Math.random()*360) + "deg,rgba(255,255,255,.42),rgba(255,255,255,.1) 60%,rgba(190,150,255,.28))";
     box.appendChild(el);
-    const dx = (cx-50)*3.2 + (Math.random()-.5)*60;
-    const dy = (cy-50)*2.4 + 90 + Math.random()*160;
-    const rot = (Math.random()-.5)*260;
-    anims.push(el.animate(
-      [{transform:"translate(0,0) rotate(0deg)",opacity:1},
-       {transform:"translate("+dx+"px,"+dy+"px) rotate("+rot+"deg) scale(.7)",opacity:0}],
-      {duration:1000+Math.random()*700, delay:Math.random()*120, easing:"cubic-bezier(.25,.6,.4,1)", fill:"forwards"}
-    ));
+    const gx = ox + cx/100*cw, gy = oy + cy/100*ch;
+    const u = (gx*W + (H-gy)*H) / (W*W + H*H);
+    const sd = (gx*H + (gy-H)*W) / L, sign = sd < 0 ? -1 : 1;
+    const lat = sign * (24 + Math.random()*70) * (.5 + Math.min(Math.abs(sd)/(L/2), 1));
+    const dx = nx*lat + (Math.random()-.5)*30, dy = ny*lat*.5;
+    const g = 260 + Math.random()*280, rot = (Math.random()-.5)*300;
+    anims.push(el.animate([
+      {transform: "translate(0,0) rotate(0deg)", opacity: 1, offset: 0, easing: "cubic-bezier(.1,.8,.3,1)"},
+      {transform: "translate("+dx+"px,"+dy+"px) rotate("+(rot*.3)+"deg)", opacity: 1, offset: .3, easing: "cubic-bezier(.5,0,.9,.7)"},
+      {transform: "translate("+(dx*1.3)+"px,"+(dy+g)+"px) rotate("+rot+"deg) scale(.8)", opacity: 0, offset: 1}
+    ], {duration: 1200 + Math.random()*600, delay: u*90 + Math.random()*40, fill: "forwards"}));
   });
   cell.appendChild(box);
   cell.classList.add("broken");
-  Promise.all(anims.map(a => a.finished)).then(() => box.remove()).catch(() => box.remove());
+  return Promise.all(anims.map(a => a.finished.catch(() => 0))).then(() => box.remove());
+}
+
+function removeHero(animated){
+  const v = document.querySelector(".hero");
+  if (!v) return;
+  v.pause();
+  if (!animated){ v.remove(); return; }
+  const h = v.offsetHeight;
+  v.animate([{opacity: 1, height: h+"px", marginBottom: "8px"}, {opacity: 0, height: "0px", marginBottom: "0px"}],
+            {duration: 900, easing: "ease", fill: "forwards"}).finished.then(() => v.remove()).catch(() => v.remove());
 }
 
 function finish(animated){
+  const grid = document.querySelector(".grid");
   document.body.classList.add("ended");
   if (!animated || reduce) document.body.classList.add("instant");
   $("title").textContent = "Her Majesty is back.";
   document.title = "Her Majesty is back.";
   ["d","h","m","s"].forEach(id => $(id).textContent = id === "d" ? "0" : "00");
-  document.querySelectorAll(".cell").forEach((cell, i) => {
-    if (animated && !reduce) setTimeout(() => shatter(cell), i * 140);
-    else cell.classList.add("broken");
-  });
+  if (!animated || reduce){ removeHero(false); grid.style.display = "none"; return; }
+  removeHero(true);
+  setTimeout(() => {                       // hold on zeros, then one hit
+    document.body.classList.add("breaking");
+    const W = grid.offsetWidth, H = grid.offsetHeight;
+    const svg = crack(grid);
+    setTimeout(() => {
+      const jobs = Array.from(grid.querySelectorAll(".cell")).map(c => shatter(c, W, H));
+      svg.animate([{opacity: 1}, {opacity: 0}], {duration: 450, fill: "forwards"}).finished.then(() => svg.remove());
+      Promise.all(jobs).then(() => { grid.style.display = "none"; document.body.classList.remove("breaking"); });
+    }, 230);
+  }, 700);
 }
 
 function tick(){
