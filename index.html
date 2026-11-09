@@ -12,7 +12,7 @@ box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:en
 html,body{margin:0;min-height:100%}
 body{background:linear-gradient(rgba(14,11,26,.35),rgba(14,11,26,.35)),url(background.webp) center/cover fixed no-repeat,var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;display:flex;flex-direction:column;align-items:center;padding:24px 16px}
 main{width:100%;max-width:760px;position:relative;z-index:1}
-.bg2{position:fixed;inset:0;z-index:0;background:linear-gradient(rgba(14,11,26,.25),rgba(14,11,26,.25)),url(background-2.webp) center/cover no-repeat;opacity:0;transition:opacity 1.8s ease .25s;pointer-events:none}
+.bg2{position:fixed;inset:0;z-index:0;background:linear-gradient(rgba(14,11,26,.25),rgba(14,11,26,.25)),url(background-2.webp) center/cover no-repeat;opacity:0;transition:opacity 1.4s ease;pointer-events:none}
 body.ended .bg2{opacity:1}
 body.instant .bg2{transition:none}
 h1{margin:.2em 0 .1em;font-size:clamp(1.8rem,6vw,2.8rem)}
@@ -134,14 +134,16 @@ function shatter(cell, W, H){
   return Promise.all(anims.map(a => a.finished.catch(() => 0))).then(() => box.remove());
 }
 
-function removeHero(animated){
+function removeHero(grid){
   const v = document.querySelector(".hero");
   if (!v) return;
   v.pause();
-  if (!animated){ v.remove(); return; }
-  const h = v.offsetHeight;
-  v.animate([{opacity: 1, height: h+"px", marginBottom: "8px"}, {opacity: 0, height: "0px", marginBottom: "0px"}],
-            {duration: 900, easing: "ease", fill: "forwards"}).finished.then(() => v.remove()).catch(() => v.remove());
+  const h = v.getBoundingClientRect().height, m = parseFloat(getComputedStyle(v).marginBottom) || 0, DUR = 900;
+  const opt = {duration: DUR, easing: "ease", fill: "forwards"};
+  // The heading rises as the animation folds away; the boxes get an equal counter-shift so they stay put.
+  grid.animate([{transform: "translateY(0)"}, {transform: "translateY(" + h + "px)"}], opt);
+  v.animate([{opacity: 1, height: h+"px", marginBottom: m+"px"}, {opacity: 0, height: "0px", marginBottom: "0px"}], opt)
+    .finished.then(() => v.remove()).catch(() => v.remove());
 }
 
 function finish(animated){
@@ -151,18 +153,20 @@ function finish(animated){
   $("title").textContent = "Her Majesty is back.";
   document.title = "Her Majesty is back.";
   ["d","h","m","s"].forEach(id => $(id).textContent = id === "d" ? "0" : "00");
-  if (!animated || reduce){ removeHero(false); grid.style.display = "none"; return; }
-  removeHero(true);
-  setTimeout(() => {                       // hold on zeros, then one hit
-    document.body.classList.add("breaking");
-    const W = grid.offsetWidth, H = grid.offsetHeight;
-    const svg = crack(grid);
-    setTimeout(() => {
-      const jobs = Array.from(grid.querySelectorAll(".cell")).map(c => shatter(c, W, H));
-      svg.animate([{opacity: 1}, {opacity: 0}], {duration: 450, fill: "forwards"}).finished.then(() => svg.remove());
-      Promise.all(jobs).then(() => { grid.style.display = "none"; document.body.classList.remove("breaking"); });
-    }, 230);
-  }, 700);
+  if (!animated || reduce){
+    const v = document.querySelector(".hero"); if (v) v.remove();
+    grid.style.display = "none"; return;
+  }
+  // Everything starts together: heading rises, background fades in, crack runs, boxes shatter.
+  document.body.classList.add("breaking");
+  const W = grid.offsetWidth, H = grid.offsetHeight;
+  removeHero(grid);
+  const svg = crack(grid);
+  setTimeout(() => {
+    const jobs = Array.from(grid.querySelectorAll(".cell")).map(c => shatter(c, W, H));
+    svg.animate([{opacity: 1}, {opacity: 0}], {duration: 450, fill: "forwards"}).finished.then(() => svg.remove());
+    Promise.all(jobs).then(() => { grid.style.display = "none"; document.body.classList.remove("breaking"); });
+  }, 230);
 }
 
 function tick(){
